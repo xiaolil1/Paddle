@@ -173,6 +173,13 @@ function(op_library TARGET)
       endif()
     endif()
 
+    # pybind USE_OP_DEVICE_KERNEL for MKLDNN
+    if (WITH_MKLDNN AND ${mkldnn_cc_srcs_len} GREATER 0)
+      if (${MKLDNN_FILE} STREQUAL "concat_mkldnn_op")
+        file(APPEND ${pybind_file} "USE_OP_DEVICE_KERNEL_WITH_CUSTOM_TYPE(concat, MKLDNN, FP32);\n")
+      endif()
+    endif()
+
     # pybind USE_OP
     if (${pybind_flag} EQUAL 0)
       # NOTE(*): activation use macro to regist the kernels, set use_op manually.

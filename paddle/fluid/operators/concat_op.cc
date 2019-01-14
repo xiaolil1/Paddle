@@ -71,9 +71,9 @@ class ConcatOp : public framework::OperatorWithKernel {
 
 #ifdef PADDLE_WITH_MKLDNN
     if (platform::CanMKLDNNBeUsed(ctx)) {
-      return framework::OpKernelType(input_data_type, ctx.GetPlace(),
-                                     framework::DataLayout::kMKLDNN,
-                                     framework::LibraryType::kMKLDNN);
+      return framework::OpKernelType(
+          input_data_type, ctx.GetPlace(), framework::DataLayout::kMKLDNN,
+          framework::LibraryType::kMKLDNN, kConcatMKLDNNFP32);
     }
 #endif
     return framework::OpKernelType(input_data_type, ctx.GetPlace());

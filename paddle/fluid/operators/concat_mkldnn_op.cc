@@ -15,6 +15,7 @@ limitations under the License. */
 #include <memory>
 #include "paddle/fluid/operators/concat_op.h"
 #include "paddle/fluid/platform/mkldnn_helper.h"
+#include "paddle/fluid/platform/mkldnn_reuse.h"
 
 namespace paddle {
 namespace operators {
@@ -37,16 +38,6 @@ static void EnforceLayouts(const std::vector<const Tensor*> inputs) {
   }
 }
 
-static memory::primitive_desc CreateMemPrimDesc(const Tensor& input,
-                                                const mkldnn::engine& engine) {
-  constexpr auto data_type = mkldnn::memory::f32;
-  const auto dims = paddle::framework::vectorize2int(input.dims());
-  const auto format = input.format();
-  auto description = memory::desc(dims, data_type, format);
-  auto mem_prim_desc = memory::primitive_desc(description, engine);
-  return mem_prim_desc;
-}
-
 static mkldnn::memory::format GetDstMemFormat(
     const concat::primitive_desc& concat_pd) {
   return (memory::format)concat_pd.dst_primitive_desc().desc().data.format;
@@ -64,6 +55,20 @@ static const mkldnn::engine& GetMKLDNNEngine(
     const paddle::framework::ExecutionContext& ctx) {
   auto& dev_ctx = ctx.template device_context<platform::MKLDNNDeviceContext>();
   return dev_ctx.GetEngine();
+}
+
+std::string CreateKey(const paddle::framework::ExecutionContext& ctx,
+                      const std::vector<const Tensor*> multi_input,
+                      const int64_t& concat_axis) {
+  std::string key;
+  key.reserve(MaxKeyLength);
+  for (size_t i = 0; i < multi_input.size(); i++) {
+    platform::ConvMKLDNNHandler::AppendKeyDims(
+        &key, paddle::framework::vectorize2int(multi_input[i]->dims()));
+  }
+  platform::ConvMKLDNNHandler::AppendKey(&key, std::to_string(concat_axis));
+  platform::ConvMKLDNNHandler::AppendKey(&key, ctx.op().Output("Output"));
+  return key;
 }
 
 template <typename T>
@@ -107,6 +112,16 @@ class ConcatPrimitiveFactory {
     }
   }
 
+  static memory::primitive_desc CreateMemPrimDesc(
+      const Tensor& input, const mkldnn::engine& engine) {
+    const auto dims = paddle::framework::vectorize2int(input.dims());
+    const auto format = input.format();
+    auto description =
+        memory::desc(dims, platform::MKLDNNGetDataType<T>(), format);
+    auto mem_prim_desc = memory::primitive_desc(description, engine);
+    return mem_prim_desc;
+  }
+
   void CreateSourcePrimitiveAts() {
     inputs.reserve(srcs.size());
     for (size_t i = 0; i < srcs.size(); i++) {
@@ -114,14 +129,32 @@ class ConcatPrimitiveFactory {
     }
   }
 
+  //  std::string CreateKey(const paddle::framework::ExecutionContext& ctx,
+  //  const std::vector<const Tensor*> multi_input, const int64_t& concat_axis){
+  //      std::string key;
+  //      key.reserve(MaxKeyLength);
+  //      for (size_t i = 0; i < multi_input.size(); i++) {
+  //        platform::ConvMKLDNNHandler::AppendKeyDims(&key,
+  //        paddle::framework::vectorize2int(multi_input[i]->dims()));
+  //      }
+  //      platform::ConvMKLDNNHandler::AppendKey(&key,
+  //      std::to_string(concat_axis));
+  //      platform::ConvMKLDNNHandler::AppendKey(&key,
+  //      ctx.op().Output("Output"));
+  //      return key;
+  //  }
+
  private:
   std::vector<memory::primitive_desc> srcs_pd;
+
+ public:
   std::vector<memory> srcs;
+
   std::vector<primitive::at> inputs;
   boost::optional<memory> dst_mem;  // TODO(mgallus): change to std::optional
 };                                  // upon introduction of C++17 to paddle
 
-template <typename T>
+template <typename T, typename K>
 class ConcatMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
  public:
   void Compute(const paddle::framework::ExecutionContext& ctx) const override {
@@ -143,10 +176,79 @@ class ConcatMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     output->set_format(GetDstMemFormat(concat_pd));
   }
 };
+
+// template <typename T>
+// class ConcatINT8MKLDNNOpKernel : public paddle::framework::OpKernel<T> {
+// public:
+//  void Compute(const paddle::framework::ExecutionContext& ctx) const override
+//  {
+//    auto multi_input = ctx.MultiInput<Tensor>("X");
+//    EnforceLayouts(multi_input);
+//    Tensor* output = ctx.Output<Tensor>("Out");
+//    int64_t concat_axis = static_cast<int64_t>(ctx.Attr<int>("axis"));
+//
+//    auto& dev_ctx = ctx.template
+//    device_context<paddle::platform::MKLDNNDeviceContext>();
+//    auto place = GetCpuPlace(ctx);
+//
+//    ConcatPrimitiveFactory<T> prim_creator;
+//    std::string key = CreateKey(ctx, multi_input, concat_axis);
+//    const std::string key_prim = key + "@concat_p";
+//    //const std::string key_inputs = key + "@concat_inputs";
+//    //const std::string key_dst = key + "@concat_dst";
+//    const std::string key_concat_pd = key + "@concat_pd";
+//
+//    std::shared_ptr<concat::primitive_desc> concat_pd;
+//    auto concat_p =
+//    std::static_pointer_cast<concat>(dev_ctx.GetBlob(key_prim));
+//
+//    if(concat_p == nullptr){
+//      const auto& mkldnn_engine = dev_ctx.GetEngine();
+//
+//      concat_pd =
+//      std::make_shared<concat::primitive_desc>(prim_creator.CreateConcatPrimDescriptor(
+//          multi_input, output, static_cast<int>(concat_axis), mkldnn_engine));
+//      concat_p =
+//      std::make_shared<concat>(prim_creator.CreateConcatPrimitive(*concat_pd,
+//      output, place));
+//
+//      //dev_ctx.SetBlob(inputs, key_inputs);
+//      //dev_ctx.SetBlob(dst_mem, key_dst);
+//      dev_ctx.SetBlob(key_prim, concat_p);
+//      dev_ctx.SetBlob(key_concat_pd, concat_pd);
+//    }
+//    else{
+//      //auto inputs =
+//      std::static_pointer_cast<std::vector<primitive::at>>(dev_ctx.GetBlob(key_inputs));
+//      //auto dst_mem =
+//      std::static_pointer_cast<mkldnn::memory>(dev_ctx.GetBlob(key_dst));
+//      concat_pd =
+//      std::static_pointer_cast<concat::primitive_desc>(dev_ctx.GetBlob(key_concat_pd));
+//      for(size_t i = 0; i < multi_input.size(); i++) {
+//        prim_creator.srcs[i].set_data_handle(to_void_cast<T>(multi_input[i]->data<T>()));
+//      }
+//      prim_creator.dst_mem.get().set_data_handle(output->mutable_data<T>(place));
+//    }
+//
+//    stream(stream::kind::eager).submit({*concat_p}).wait();
+//
+//    output->set_layout(DataLayout::kMKLDNN);
+//    output->set_format(GetDstMemFormat(*concat_pd));
+//  }
+//};
+
 }  // namespace operators
 }  // namespace paddle
 
 namespace ops = paddle::operators;
 
-REGISTER_OP_KERNEL(concat, MKLDNN, ::paddle::platform::CPUPlace,
-                   ops::ConcatMKLDNNOpKernel<float>)
+REGISTER_OP_KERNEL_WITH_CUSTOM_TYPE(concat, MKLDNN,
+                                    ::paddle::platform::CPUPlace, FP32,
+                                    ops::kConcatMKLDNNFP32,
+                                    ops::ConcatMKLDNNOpKernel<float, float>);
+// REGISTER_OP_KERNEL_WITH_CUSTOM_TYPE(concat, MKLDNN,
+// ::paddle::platform::CPUPlace, U8, ops::kConcatMKLDNNFP32,
+//                   ops::ConcatINT8MKLDNNOpKernel<int8_t>);
+// REGISTER_OP_KERNEL_WITH_CUSTOM_TYPE(concat, MKLDNN,
+// ::paddle::platform::CPUPlace, S8, ops::kConcatMKLDNNFP32,
+//                   ops::ConcatINT8MKLDNNOpKernel<uint8_t>);

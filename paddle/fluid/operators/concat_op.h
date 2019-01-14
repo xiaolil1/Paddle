@@ -23,6 +23,10 @@ limitations under the License. */
 namespace paddle {
 namespace operators {
 
+constexpr int kConcatMKLDNNFP32 = 1;
+constexpr int kConcatMKLDNNINT8 = 2;
+constexpr int MaxKeyLength = 256;
+
 template <typename DeviceContext, typename T>
 class ConcatKernel : public framework::OpKernel<T> {
  public:
