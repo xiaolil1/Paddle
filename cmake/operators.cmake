@@ -168,15 +168,10 @@ function(op_library TARGET)
         file(APPEND ${pybind_file} "USE_OP_DEVICE_KERNEL(relu, MKLDNN);\n")
       elseif(${MKLDNN_FILE} STREQUAL "conv_mkldnn_op")
         file(APPEND ${pybind_file} "USE_OP_DEVICE_KERNEL_WITH_CUSTOM_TYPE(conv2d, MKLDNN, FP32);\n")
+      elseif(${MKLDNN_FILE} STREQUAL "concat_mkldnn_op")
+        file(APPEND ${pybind_file} "USE_OP_DEVICE_KERNEL_WITH_CUSTOM_TYPE(concat, MKLDNN, FP32);\n")
       else()
         file(APPEND ${pybind_file} "USE_OP_DEVICE_KERNEL(${TARGET}, MKLDNN);\n")
-      endif()
-    endif()
-
-    # pybind USE_OP_DEVICE_KERNEL for MKLDNN
-    if (WITH_MKLDNN AND ${mkldnn_cc_srcs_len} GREATER 0)
-      if (${MKLDNN_FILE} STREQUAL "concat_mkldnn_op")
-        file(APPEND ${pybind_file} "USE_OP_DEVICE_KERNEL_WITH_CUSTOM_TYPE(concat, MKLDNN, FP32);\n")
       endif()
     endif()
 
