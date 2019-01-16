@@ -38,6 +38,16 @@ static void EnforceLayouts(const std::vector<const Tensor*> inputs) {
   }
 }
 
+static memory::primitive_desc CreateMemPrimDesc(const Tensor& input,
+                                                const mkldnn::engine& engine,
+                                                const memory::data_type& dt) {
+  const auto dims = paddle::framework::vectorize2int(input.dims());
+  const auto format = input.format();
+  auto description = memory::desc(dims, dt, format);
+  auto mem_prim_desc = memory::primitive_desc(description, engine);
+  return mem_prim_desc;
+}
+
 static mkldnn::memory::format GetDstMemFormat(
     const concat::primitive_desc& concat_pd) {
   return (memory::format)concat_pd.dst_primitive_desc().desc().data.format;
@@ -117,16 +127,6 @@ class ConcatPrimitiveFactory {
     }
   }
 
-  static memory::primitive_desc CreateMemPrimDesc(const Tensor& input,
-                                                  const mkldnn::engine& engine,
-                                                  const memory::data_type& dt) {
-    const auto dims = paddle::framework::vectorize2int(input.dims());
-    const auto format = input.format();
-    auto description = memory::desc(dims, dt, format);
-    auto mem_prim_desc = memory::primitive_desc(description, engine);
-    return mem_prim_desc;
-  }
-
   void CreateSourcePrimitiveAts() {
     inputs.reserve(srcs.size());
     for (size_t i = 0; i < srcs.size(); i++) {
@@ -136,11 +136,10 @@ class ConcatPrimitiveFactory {
 
  private:
   std::vector<memory::primitive_desc> srcs_pd;
+  std::vector<primitive::at> inputs;
 
  public:
   std::vector<memory> srcs;
-
-  std::vector<primitive::at> inputs;
   boost::optional<memory> dst_mem;  // TODO(mgallus): change to std::optional
 };                                  // upon introduction of C++17 to paddle
 
