@@ -117,9 +117,9 @@ class ConcatPrimitiveFactory {
     }
   }
 
-  static memory::primitive_desc CreateMemPrimDesc(
-      const Tensor& input, const mkldnn::engine& engine,
-      const mkldnn::memory::data_type& dt) {
+  static memory::primitive_desc CreateMemPrimDesc(const Tensor& input,
+                                                  const mkldnn::engine& engine,
+                                                  const memory::data_type& dt) {
     const auto dims = paddle::framework::vectorize2int(input.dims());
     const auto format = input.format();
     auto description = memory::desc(dims, dt, format);
@@ -179,7 +179,7 @@ class ConcatINT8MKLDNNOpKernel : public paddle::framework::OpKernel<T> {
         ctx.template device_context<paddle::platform::MKLDNNDeviceContext>();
     auto place = GetCpuPlace(ctx);
 
-    mkldnn::memory::data_type dt =
+    memory::data_type dt =
         paddle::framework::ToMKLDNNDataType(multi_input[0]->type());
 
     ConcatPrimitiveFactory<T> prim_creator;
