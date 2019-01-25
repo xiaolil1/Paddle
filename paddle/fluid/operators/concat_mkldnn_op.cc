@@ -155,11 +155,34 @@ class ConcatMKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     Tensor* output = ctx.Output<Tensor>("Out");
     int64_t concat_axis = static_cast<int64_t>(ctx.Attr<int>("axis"));
 
+    bool in_place = true;
+    for (auto i = 0; i < multi_input.size(); i++) {
+      if (concat_axis != 0 && multi_input[i]->dims()[concat_axis - 1] != 1) {
+        in_place = false;
+        break;
+      }
+    }
+
     ConcatPrimitiveFactory<T> prim_creator;
     auto concat_pd = prim_creator.CreateConcatPrimDescriptor(
         multi_input, output, static_cast<int>(concat_axis), mkldnn_engine);
     auto concat = prim_creator.CreateConcatPrimitive(concat_pd, output, place);
-    stream(stream::kind::eager).submit({concat}).wait();
+
+    if (in_place) {
+      size_t offset = 0;
+      for (auto i = 0; i < multi_input.size(); i++) {
+        memcpy(static_cast<T*>(prim_creator.dst_mem.get().get_data_handle()) +
+                   offset,
+               static_cast<T*>(prim_creator.srcs[i].get_data_handle()),
+               sizeof(T) * multi_input[i]->numel());
+        prim_creator.srcs[i].set_data_handle(
+            static_cast<T*>(prim_creator.dst_mem.get().get_data_handle()) +
+            offset);
+        offset += multi_input[i]->numel();
+      }
+    } else {
+      stream(stream::kind::eager).submit({concat}).wait();
+    }
 
     output->set_layout(DataLayout::kMKLDNN);
     output->set_format(GetDstMemFormat(concat_pd));
@@ -181,6 +204,14 @@ class ConcatINT8MKLDNNOpKernel : public paddle::framework::OpKernel<T> {
     memory::data_type dt =
         paddle::framework::ToMKLDNNDataType(multi_input[0]->type());
 
+    bool in_place = true;
+    for (auto i = 0; i < multi_input.size(); i++) {
+      if (concat_axis != 0 && multi_input[i]->dims()[concat_axis - 1] != 1) {
+        in_place = false;
+        break;
+      }
+    }
+
     ConcatPrimitiveFactory<T> prim_creator;
     std::string key = CreateKey(ctx, multi_input, concat_axis, dt);
     const std::string key_prim = key + "@concat_p";
@@ -197,6 +228,21 @@ class ConcatINT8MKLDNNOpKernel : public paddle::framework::OpKernel<T> {
                                                   mkldnn_engine, dt));
       concat_p = std::make_shared<concat>(
           prim_creator.CreateConcatPrimitive(*concat_pd, output, place));
+
+      if (in_place) {
+        size_t offset = 0;
+        for (auto i = 0; i < multi_input.size(); i++) {
+          memcpy(static_cast<T*>(prim_creator.dst_mem.get().get_data_handle()) +
+                     offset,
+                 static_cast<T*>(prim_creator.srcs[i].get_data_handle()),
+                 sizeof(T) * multi_input[i]->numel());
+          prim_creator.srcs[i].set_data_handle(
+              static_cast<T*>(prim_creator.dst_mem.get().get_data_handle()) +
+              offset);
+          offset += multi_input[i]->numel();
+        }
+      }
+
       dev_ctx.SetBlob(key_prim, concat_p);
       dev_ctx.SetBlob(key_concat_pd, concat_pd);
     } else {
@@ -210,7 +256,7 @@ class ConcatINT8MKLDNNOpKernel : public paddle::framework::OpKernel<T> {
           output->mutable_data<T>(place));
     }
 
-    stream(stream::kind::eager).submit({*concat_p}).wait();
+    if (!in_place) stream(stream::kind::eager).submit({*concat_p}).wait();
 
     output->set_layout(DataLayout::kMKLDNN);
     output->set_format(GetDstMemFormat(*concat_pd));
