@@ -34,6 +34,8 @@ limitations under the License. */
 #include "paddle/fluid/platform/device_context.h"
 #include "paddle/fluid/platform/variant.h"
 
+DECLARE_int32(inner_op_parallelism);
+
 namespace paddle {
 namespace framework {
 
@@ -220,12 +222,7 @@ class ExecutionContext {
     if (it == ctx_.inputs.end()) {
       return {};
     }
-    std::vector<const Variable*> res;
-    res.reserve(it->second.size());
-    std::transform(it->second.begin(), it->second.end(),
-                   std::back_inserter(res),
-                   [this](Variable* var) { return var; });
-    return res;
+    return {it->second.begin(), it->second.end()};
   }
 
   std::vector<Variable*> MultiOutputVar(const std::string& name) const {
@@ -391,7 +388,7 @@ class ExecutionContext {
     PADDLE_ENFORCE(
         dynamic_cast<platform::TemporaryAllocation*>(allocation_ptr) != nullptr,
         "The AllocationPtr must be TemporaryAllocation.");
-    PADDLE_ENFORCE_EQ(allocation_ptr->size(),
+    PADDLE_ENFORCE_GE(allocation_ptr->size(),
                       framework::product(dim) * sizeof(T));
 
     paddle::framework::Tensor temp_tensor(
