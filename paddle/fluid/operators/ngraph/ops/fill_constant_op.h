@@ -12,12 +12,12 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-#ifdef PADDLE_WITH_NGRAPH
 #pragma once
 
 #include <string>
 #include <vector>
 #include "ngraph/ngraph.hpp"
+#include "paddle/fluid/operators/ngraph/ops/op_bridge.h"
 #include "paddle/fluid/platform/ngraph_helper.h"
 
 namespace paddle {
@@ -47,8 +47,6 @@ void BuildFillConstantNode(
     ng_dtype = ngraph::element::i64;
   } else if (data_type == paddle::framework::proto::VarType::INT32) {
     ng_dtype = ngraph::element::i32;
-  } else if (data_type == paddle::framework::proto::VarType::BOOL) {
-    ng_dtype = ngraph::element::boolean;
   } else {
     PADDLE_THROW("unsupported data type: %s", data_type);
   }
@@ -58,4 +56,5 @@ void BuildFillConstantNode(
 }  // namespace ngraphs
 }  // namespace operators
 }  // namespace paddle
-#endif
+
+REGISTER_NG_OP(fill_constant, BuildFillConstantNode);

@@ -12,11 +12,11 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-#ifdef PADDLE_WITH_NGRAPH
 #pragma once
 
 #include <string>
 #include "ngraph/ngraph.hpp"
+#include "paddle/fluid/operators/ngraph/ops/op_bridge.h"
 #include "paddle/fluid/platform/ngraph_helper.h"
 
 namespace paddle {
@@ -131,4 +131,6 @@ static void BuildMulGradNode(
 }  // namespace ngraphs
 }  // namespace operators
 }  // namespace paddle
-#endif
+
+REGISTER_NG_OP(mul, BuildMulNode);
+REGISTER_NG_OP(mul_grad, BuildMulGradNode);

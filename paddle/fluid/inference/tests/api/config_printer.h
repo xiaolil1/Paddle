@@ -58,11 +58,10 @@ std::ostream &operator<<(std::ostream &os, const NativeConfig &config) {
   return os;
 }
 
-std::ostream &operator<<(std::ostream &os,
-                         const contrib::AnalysisConfig &config) {
-  os << GenSpaces(num_spaces) << "contrib::AnalysisConfig {\n";
+std::ostream &operator<<(std::ostream &os, const AnalysisConfig &config) {
+  os << GenSpaces(num_spaces) << "AnalysisConfig {\n";
   num_spaces++;
-  os << *reinterpret_cast<const NativeConfig *>(&config);
+  os << config.ToNativeConfig();
   if (!config.model_from_memory()) {
     os << GenSpaces(num_spaces) << "prog_file: " << config.prog_file() << "\n";
     os << GenSpaces(num_spaces) << "param_file: " << config.params_file()
